@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🛡️ My Site Armor - Own Website Scanner</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; font-family:'Courier New',monospace; }
+  body { background:#050508; color:#00fff; min-height:100vh; padding:20px; }
+  .container { max-width:750px; margin:0 auto; }
+  h1 { text-align:center; color:#00ff88; text-shadow:0 0 15px #00ff88; margin:30px 0 5px; }
+  .subtitle { text-align:center; color:#666; margin-bottom:30px; }
+  .scan-box {:flex; gap:10px; }
+  input { flex:1; padding:15px; background:#0a0a14; border:2px solid #00ff88; color:#00fff; font-size:1em; outline:none; }
+  input:focus { box-shadow:0 0 15px rgba(0,255,136,0.4); }
+  button { padding:15px 30px; background:transparent; border:2px solid #00ff88; color:#00ff88; cursor:pointer; font-weight:bold; transition:0.3s; }
+  button:hover { background:#00ff88; color:#050508; box-shadow:0 0 20px #00ff88;  #results { margin-top:30px; }
+  .item { background:#0a0a14; border-left:4px solid; padding:14px 18px; margin-bottom:10px; animation:fade 0.4s; }
+  @keyframes fade { from{opacity0;transform:translateY(10px);} to{opacity:1;} }
+  .safe border-color:#00ff88; }
+  .warn { border-color:#ffcc00; }
+  .danger { border-color:#ff3366; }
+  .info { border-color:#00aaff; }
+  .score { text-align:center; font-size:3em; margin:20px ; }
+  .scanning { text-align:center; color:#ffcc00; padding:20px; animation:blink 1s infinite; }
+  @keyframes blink { 50%{opacity:0.4;} }
+  .summary { text-align:center; color:#888; margin-top:20px; font-size:0.9em; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🛡️ MY SITE ARMOR</h1>
+  <p class="subtitle">&gt; Scan YOUR OWN website for weaknesses_</p>
+
+  <div class="scan-box">
+    <input type="text" id="urlInput" placeholder="https://yourwebsite.com" />
+    <button onclick="scan()">SCAN</button>
+  </div>
+
+  <div id="results"></div>
+</div>
+
+<script>
+async function scan() {
+  const input = document.getElementByIdurlInput').value.trim();
+ const results = document.getElementById('results');
+  if (!input) { alert('Enter your website URL!'); return; }
+
+ let url = input.startsWith('http') ? input : 'https://' + input;
+  results.innerHTML = '<div class="scanning">⟳ SCANNING ' + url + ' ..._</div>';
+
+  let risk = 0;
+  let output = '';
+  let html = '';
+  let headers = null;
+
+  // ===== CHECK 1: HTTPS =====
+  await new Promise(r => setTimeout(r, 800));
+  if (url.startsWith('https://')) {
+    output += item('safe','✅ HTTPS ENABLED','Your connection is encrypted. Visitors\' data is protected from interception.');
+  } else {
+    risk += 3;
+    output += item('danger','🚨 NO HTTPS',' site sends data in plain text! Get a FREE SSL from Let\'s Encrypt (via your hosting or Cloudflare).');
+  }
+
+  // ===== FETCH PAGE CONTENT =====
+  try {
+    const resp = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(url));
+    const data = await resp.json();
+    html = data.contents || '';
+    try { headers = JSON.parse(data.status || '{}'); } catch(e) {}
+
+    // ===== CHECK 2: Forms & passwords =====
+    const hasPassword = /type=["']?password/i.test(html);
+    if (hasPassword && !url.startsWith('https://')) {
+      risk += 3;
+      output += item('danger','🚨 PASSWORD FIELD WITHOUT HTTPS','Your login form sends passwords unencrypted. FIX IMMEDIATELY!');
+    } else if (hasPassword) {
+      output += item('safe','✅ LOGIN FORM ON HTTPS','Password fields detected and encrypted.');
+    }
+
+    // ===== CHECK 3: Mixed content (http resources on https page) =====
+    if (url.startsWith('https://') && /src=["']?http:\/\//i.test(html)) {
+      risk += 2;
+      output += item('danger','🚨 MIXED CONTENT','Your HTTPS page loads scripts/images over HTTP. Browsers may block them and attackers can inject code. Change all http:// links to https://');
+    } else if (url.startsWith('https://')) {
+      output += item('safe','✅ NO MIXED CONTENT','All resources loaded securely.');
+    }
+
+    // ===== CHECK 4: Exposed emails =====
+    const emails = html.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}/);
+    if (emails && emails.length > 0) {
+      risk += 1;
+      output += item('warn','⚠️ ' + emails.length + ' EMAIL(S) EXPOSED','Found: ' + [...new Set(emails)].slice(0,3).join(', ') + '<br>Spambots harvest these. Consider using a contact form instead.');
+    }
+
+    // ===== CHECK 5: Version leaks =====
+    const versions = html.match(/(jquery|bootstrap|angular|vue)[\/-@ ]?v?[\d]+\.[\d]+[^"']*/ig);
+    if (versions) {
+      risk += 1;
+      output += item('warn','⚠️RARY VERSIONS VISIBLE','Found: ' + [...new Set(versions)].slice(0,3).join(' | ') + '<br>Attackers match versions to known exploits. Remove version numbers from paths.');
+    } else {
+      output += item('safe','✅ NO VERSION LEAKS','Library versions not exposed in HTML.');
+    }
+
+    // ===== CHECK 6: Debug/test files referenced =====
+    if (/(wp-debug|phpinfo|test\.php|admin\/config)/i.test(html)) {
+      risk += 2;
+      output += item('danger','🚨 SENSITIVE FILE REFERENCES','Page references debug/config files. Make sure these are not publicly accessible!');
+    }
+
+    // ===== CHECK 7: Long HTML comments =====
+    const comments = html.match<!--[\s\S]{200,}?-->/g);
+    if (comments) {
+      += 1;
+      output += item('warn','⚠️ LARGE HTML COMMENTS','Big comments can leak internal notes, old code, or server info. Remove them in production.');
+    }
+
+    // ===== CHECK 8: Inline API keys / secrets =====
+    if (/(api[_-]?key|secret|token)["\s:=]+["\'][a-zA-Z0-9]{20,}/i.test(html)) {
+      risk += 3;
+      output += item('danger','🚨 POSSIBLE API KEY EXPOSED','Looks like a key/secret is hardcoded in your HTML! Anyone can steal it. Move secrets to backend.');
+    } else {
+      output += item('safe','✅ NO VISIBLE SECRETS','No API keys or tokens found in page source.');
+    }
+
+  } catch(e) {
+    output += item('warn','⚠️ PARTIAL SCAN','Could not fully read the page (site blocks bots or CORS). Basic checks only. For deeper scans use securityheaders.com');
+  }
+
+  // ===== CHECK 9: Security headers (via public API) =====
+  try {
+    const hResp = await fetchhttps://api.allorigins.win/get?url=' + encodeURIComponent('https://securityheaders.com/?q=' + encodeURIComponent(url) + '&followRedirects=on'));
+    Just informational — direct parse unreliable, so give advice:
+    output += item('info','ℹ️ SECURITY HEADERS','Manually verify at <b>securityheaders.com</b> — you want: Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Strict-Transport-Security.');
+  } catch(e) {}
+
+  // ===== SCORE =====
+  let score, label, color;
+  if (risk === 0) { score='A+'; label='FORTIFIED — Excellent!'; color='#00ff88'; }
+  else if (risk <= 2) { score='B'; label='GOOD — Minor improvements needed'; color='#ffcc00'; }
+  else if (risk <= 5) { score='C'; label='AT RISK — Fix the warnings soon'; color='#ff9933'; }
+  else { score='F'; label='VULNERABLE — Fix the red issues NOW!'; color='#ff3366'; }
+
+  results.innerHTML =
+    '<div class="score" style="color:'+color+'">'+score+'</div>'+
+    '<p style="text-align:center;color:'+color+';margin-bottom:25px;">'+label+'</p>'+
+    output +
+    '<p class="summary">Scan complete. Always re-scan after fixing issues. 🛡️</p>';
+}
+
+function item(cls, title, desc) {
+  return '<div class="item '+cls+'"><b>'+title+'</b><br><span style="color:#999;font-size:0.9em;">'+desc+'</span></div>';
+}
+</script>
+</body>
+</html>
